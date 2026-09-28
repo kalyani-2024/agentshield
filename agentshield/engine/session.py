@@ -128,6 +128,15 @@ def state_for_risk(cumulative_risk: int) -> SessionState:
     return STATE_LADDER[-1]
 
 
+#: name -> state instance, for rehydrating a persisted session.
+STATE_BY_NAME: dict[str, SessionState] = {state.name: state for state in STATE_LADDER}
+
+
+def state_by_name(name: str) -> SessionState:
+    """Rebuild a :class:`SessionState` from its persisted name."""
+    return STATE_BY_NAME.get(name, NormalState())
+
+
 @dataclass
 class Session:
     """Mutable per-agent-session security state."""

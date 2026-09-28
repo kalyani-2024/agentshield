@@ -12,6 +12,12 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+api = ["flask>=3.0"]
+postgres = ["psycopg[binary]>=3.1"]
+redis = ["redis>=5.0"]
+
+[project.scripts]
+agentshield-api = "agentshield.api_http.app:main"
 
 [tool.setuptools.packages.find]
 include = ["agentshield*"]

@@ -12,18 +12,30 @@ the action is safe.
 LLM Agent  ->  AGENTSHIELD  ->  actual tools / APIs
 ```
 
-This repository currently contains **stage 1: the core security engine**, which
-runs end to end - adapters, the filter pipeline, risk scoring, policy decisions,
-session privilege states, the audit trail and the secure tool proxy.
+This repository contains:
+
+- **Stage 1 - core security engine**: adapters, the filter pipeline, risk
+  scoring, policy decisions, session privilege states, the audit trail and the
+  secure tool proxy.
+- **Stage 2 - persistence and HTTP API**: a repository layer (SQLite by
+  default, PostgreSQL for deployment), an optional Redis-backed session store,
+  and a Flask API that serves security decisions and persists every one.
 
 ## Quick start
 
 ```bash
-python demo.py        # four scenarios: benign, indirect injection, multi-step attack, approval
-python -m pytest -q   # 85 tests
+python demo.py         # Stage 1: four scenarios in-process
+python demo_stage2.py  # Stage 2: the HTTP API + persistence (no server needed)
+python -m pytest -q    # 113 tests
 ```
 
-No third-party runtime dependencies; Python 3.10+.
+The core engine has **no third-party runtime dependencies** (Python 3.10+).
+The API needs Flask; PostgreSQL and Redis are optional backends:
+
+```bash
+pip install -e ".[api]"                 # Flask, to run the HTTP API
+pip install -e ".[api,postgres,redis]"  # + the deployment backends
+```
 
 ## Using it
 
@@ -158,8 +170,83 @@ agentshield/
   proxy/       commands, approval queue, secure tool proxy, mock tools
   api.py       AgentShield facade
   report.py    the console verdict panel
-demo.py        four end-to-end scenarios
-tests/         85 tests
+  config.py    Stage 2: settings from environment
+  storage/     Stage 2: repository, SQLite + PostgreSQL backends, persistence observer
+  service.py   Stage 2: wires the engine to storage
+  api_http/    Stage 2: the Flask HTTP API
+  engine/redis_session.py   Stage 2: Redis-backed session store
+demo.py        Stage 1 scenarios
+demo_stage2.py Stage 2 API walkthrough
+tests/         113 tests
+```
+
+## Stage 2 - persistence and the HTTP API
+
+Persistence attaches to the engine as **just another Observer** - the security
+engine from Stage 1 is not modified. Every evaluated call, decision, incident
+and event is written to a repository.
+
+```
+   POST /v1/evaluate
+        |
+   ShieldService  ->  SecurityEngine (Stage 1)
+        |                   |  publishes events
+        |                   v
+        |            PersistenceObserver  ->  Repository
+        |                                       /        \
+        v                                  SQLite      PostgreSQL
+   ALLOW / APPROVAL / BLOCK  (persisted, then returned as JSON)
+```
+
+**Storage.** One `Repository` interface, two backends chosen by a connection
+string. SQLite is the default and needs no setup; PostgreSQL (via psycopg) is
+the deployment target. The schema covers `principals`, `sessions`,
+`tool_calls`, `policy_decisions`, `incidents`, `security_events` and
+`approvals`.
+
+**Sessions.** In-memory by default; set a Redis URL and the same session state
+(risk score, short-term history) lives in Redis instead, shared across API
+workers and expiring on its own. The engine cannot tell which backend is in
+use.
+
+**API endpoints (Flask):**
+
+| Method + path | Purpose |
+|---|---|
+| `GET /health` | liveness |
+| `GET /v1/backend` | which storage backends are active |
+| `POST /v1/evaluate` | judge a tool call (decision-as-a-service; no execution) |
+| `GET /v1/decisions` | recent decisions, optionally `?session_id=` |
+| `GET /v1/sessions/<id>` | a session's state and decision history |
+| `POST /v1/sessions/<id>/reset` | operator recovery back to NORMAL |
+| `GET /v1/approvals` | pending approvals |
+| `POST /v1/approvals/<call_id>` | `{"decision": "approve"\|"deny"}` |
+| `GET /v1/incidents` | opened incidents |
+| `GET /v1/stats` | metrics + table row counts |
+
+**Configuration** (all via environment, no secret literals in code):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AGENTSHIELD_DATABASE_URL` | `sqlite:///agentshield.db` | `sqlite:///...` or `postgresql://...` |
+| `AGENTSHIELD_REDIS_URL` | *(empty)* | `redis://host:6379/0` enables the Redis store |
+| `AGENTSHIELD_API_KEY` | *(empty)* | if set, required in the `X-API-Key` header |
+| `AGENTSHIELD_ALLOWED_DOMAINS` | *(empty)* | comma-separated trust allowlist |
+| `AGENTSHIELD_DENIED_DOMAINS` | *(empty)* | comma-separated trust denylist |
+| `AGENTSHIELD_API_HOST` / `_PORT` | `127.0.0.1` / `8000` | API bind address |
+
+Run the API for real:
+
+```bash
+python -m agentshield.api_http.app     # or: agentshield-api
+```
+
+Point it at PostgreSQL + Redis:
+
+```bash
+export AGENTSHIELD_DATABASE_URL=postgresql://user:pass@localhost:5432/agentshield
+export AGENTSHIELD_REDIS_URL=redis://localhost:6379/0
+python -m agentshield.api_http.app
 ```
 
 ## Design notes
@@ -178,11 +265,11 @@ redacted before they reach the audit log.
 **Unknown tools stay unknown.** `classify_tool` refuses to guess a capability
 class it cannot recognise, rather than silently granting the wrong privileges.
 
-## Not in stage 1
+## Still to come
 
-Stage 2 adds persistence (PostgreSQL for tool calls, decisions and incidents;
-Redis for session risk and rate limits) and an HTTP API. Stage 3 adds the
-benchmark: 500 benign and 500 malicious interactions, measuring precision,
-recall, F1, false-positive rate, attack success rate and added latency across
-the rules / ML / LLM-judge / hybrid strategies. The `DetectionStrategy`
-interface and the `MetricsObserver` already exist for exactly that comparison.
+Stage 3 adds the benchmark: 500 benign and 500 malicious interactions,
+measuring precision, recall, F1, false-positive rate, attack success rate and
+added latency across the rules / ML / LLM-judge / hybrid strategies. The
+`DetectionStrategy` interface and the `MetricsObserver` already exist for
+exactly that comparison, and Stage 2's `policy_decisions` table gives it a place
+to store per-run results.

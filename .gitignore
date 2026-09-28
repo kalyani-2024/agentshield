@@ -8,5 +8,9 @@ dist/
 venv/
 .env
 audit*.jsonl
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
 .idea/
 .vscode/
