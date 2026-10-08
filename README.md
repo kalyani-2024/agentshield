@@ -12,7 +12,7 @@ the action is safe.
 LLM Agent  ->  AGENTSHIELD  ->  actual tools / APIs
 ```
 
-This repository contains:
+This repository is the complete project:
 
 - **Stage 1 - core security engine**: adapters, the filter pipeline, risk
   scoring, policy decisions, session privilege states, the audit trail and the
@@ -20,13 +20,19 @@ This repository contains:
 - **Stage 2 - persistence and HTTP API**: a repository layer (SQLite by
   default, PostgreSQL for deployment), an optional Redis-backed session store,
   and a Flask API that serves security decisions and persists every one.
+- **Stage 3 - experimental benchmark**: a reproducible dataset of 500 benign +
+  500 malicious interactions across six attack families, and a harness that
+  compares detection strategies (Rules / Heuristic / ML / Hybrid) and measures
+  the full engine end to end - precision, recall, F1, false-positive rate,
+  attack-success rate and added latency.
 
 ## Quick start
 
 ```bash
 python demo.py         # Stage 1: four scenarios in-process
 python demo_stage2.py  # Stage 2: the HTTP API + persistence (no server needed)
-python -m pytest -q    # 113 tests
+python run_benchmark.py  # Stage 3: the benchmark, printed to the terminal
+python -m pytest -q    # 126 tests
 ```
 
 The core engine has **no third-party runtime dependencies** (Python 3.10+).
@@ -175,9 +181,11 @@ agentshield/
   service.py   Stage 2: wires the engine to storage
   api_http/    Stage 2: the Flask HTTP API
   engine/redis_session.py   Stage 2: Redis-backed session store
+  benchmark/   Stage 3: dataset, pure-Python ML classifier, metrics, harness
 demo.py        Stage 1 scenarios
 demo_stage2.py Stage 2 API walkthrough
-tests/         113 tests
+run_benchmark.py  Stage 3 benchmark runner
+tests/         126 tests
 ```
 
 ## Stage 2 - persistence and the HTTP API
@@ -265,11 +273,53 @@ redacted before they reach the audit log.
 **Unknown tools stay unknown.** `classify_tool` refuses to guess a capability
 class it cannot recognise, rather than silently granting the wrong privileges.
 
-## Still to come
+## Stage 3 - the experimental benchmark
 
-Stage 3 adds the benchmark: 500 benign and 500 malicious interactions,
-measuring precision, recall, F1, false-positive rate, attack success rate and
-added latency across the rules / ML / LLM-judge / hybrid strategies. The
-`DetectionStrategy` interface and the `MetricsObserver` already exist for
-exactly that comparison, and Stage 2's `policy_decisions` table gives it a place
-to store per-run results.
+`python run_benchmark.py` builds a seeded dataset of 500 benign + 500 malicious
+interactions across six attack families (direct injection, indirect/document
+injection, data exfiltration, malicious URL, unauthorized tool use, multi-step
+attack, plus a stealth-exfiltration family), trains the ML detector on a
+stratified training split, and evaluates everything on the held-out test set.
+
+**Detection strategies** all share the Stage 1 `DetectionStrategy` interface:
+
+- **Rules** - the regex signature catalogue
+- **Heuristic** - lexical / structural scoring
+- **ML** - a from-scratch multinomial Naive Bayes classifier (pure Python, no
+  dependencies), trained on the benchmark's own training split
+- **Hybrid** - Rules OR ML
+- **LLM-judge** - an adapter (`LLMJudgeStrategy`) you supply a model callable
+  to; not run automatically because it needs an API key and network
+
+Representative run (seed 1337, 1000 interactions):
+
+```
+DETECTOR COMPARISON (held-out test set, injection text only)
+strategy     precision  recall     f1      fpr   accuracy
+rules            1.000   0.533   0.696   0.000   0.767
+heuristic        1.000   0.080   0.148   0.000   0.540
+ml               1.000   1.000   1.000   0.000   1.000
+hybrid           1.000   1.000   1.000   0.000   1.000
+
+END-TO-END ENGINE (full pipeline over the whole dataset)
+detection rate 0.858 | false-positive rate 0.088 | attack success 0.142
+added latency  ~0.30 ms per call
+only stealth_exfiltration slips through (no injection words, obfuscated
+secret, neutral destination) - the case defence-in-depth exists for.
+```
+
+Reading the results honestly:
+
+- **Rules** are precise (no false positives) but catch only about half the
+  attacks - evasive phrasings dodge fixed signatures. That gap is the real,
+  informative signal.
+- **ML / Hybrid** look near-perfect here because synthetic templated text makes
+  the classes almost linearly separable; those figures are an optimistic upper
+  bound, not a field result, and the runner says so.
+- The **end-to-end engine** is the headline: it catches five of six families
+  outright at sub-millisecond cost, and the one family it misses is genuinely
+  invisible to any text detector - which is the argument for the layered design.
+
+Metrics live in `agentshield/benchmark/metrics.py`; the dataset and harness are
+seeded and reproducible, and Stage 2's `policy_decisions` table is where a run's
+per-call results can be persisted.
