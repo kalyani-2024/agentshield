@@ -805,93 +805,117 @@ added latency = time inside evaluate(), per call (mean and 95th percentile)
 
 ## 7. Results
 
-Run of `python run_benchmark.py` on the committed benchmark and models.
-Latency was measured on a laptop and will differ elsewhere.
+Run of `python run_benchmark.py --no-llm-engine` on the committed benchmark and
+models, with the LLM judge on Groq (`openai/gpt-oss-120b`, low reasoning
+effort, temperature 0). Latency was measured on a laptop and will differ
+elsewhere. `results/benchmark_results.json` holds every number below.
 
-**The LLM-judge arm was not run.** No provider key was available when these
-numbers were produced. The judge and its clients are implemented and tested
-against a stub provider; `hybrid` therefore ran as the ML model alone and its
-row equals the `ml` row. Section 8 gives the one command that fills in both
-arms once a key is set.
+What was and was not measured:
+
+| Arm | Detector level | End to end |
+|---|---|---|
+| Rules | measured | measured |
+| Naive Bayes (baseline) | measured | not run (baseline only) |
+| ML | measured | measured |
+| Hybrid (ML + LLM judge) | **measured** | **measured** |
+| LLM judge alone | **incomplete**: the provider's free daily quota ran out partway through; the arm was discarded rather than reported on a subset | **not run yet** (needs about 800 more calls) |
+
+Section 8 gives the command that completes the LLM-judge arm once the quota
+resets; verdicts already obtained are cached and cost nothing to reuse.
 
 ### 7.1 Detector level (content only, 900 text samples)
 
-| Approach | Precision | Recall | F1 | FPR | Attack success | Mean latency |
-|---|---|---|---|---|---|---|
-| Rules | 0.996 | 0.540 | 0.700 | 0.002 | 0.460 | 0.6 ms |
-| Naive Bayes (baseline) | 0.936 | 0.709 | 0.807 | 0.049 | 0.291 | 0.1 ms |
-| ML (logistic regression) | 0.995 | 0.853 | 0.919 | 0.004 | 0.147 | 3.1 ms |
-| LLM judge | not run | | | | | |
-| Hybrid | equals ML without a judge | | | | | |
+| Approach | Precision | Recall | F1 | FPR | Attack success | Mean latency | p95 latency |
+|---|---|---|---|---|---|---|---|
+| Rules | 0.996 | 0.540 | 0.700 | 0.002 | 0.460 | 0.7 ms | 1.7 ms |
+| Naive Bayes (baseline) | 0.936 | 0.709 | 0.807 | 0.049 | 0.291 | 0.1 ms | 0.3 ms |
+| ML (logistic regression) | 0.995 | 0.853 | 0.919 | 0.004 | 0.147 | 1.5 ms | 4.2 ms |
+| Hybrid (ML + LLM judge) | **0.998** | **0.898** | **0.945** | **0.002** | **0.102** | 624 ms | 3,490 ms |
+| LLM judge alone | incomplete | | | | | | |
+
+The hybrid sent 203 of the 900 texts (22.6%) to the LLM judge; the model
+settled the other 697 on its own.
 
 URL model on 100 URLs: precision 0.920, recall 0.920, F1 0.920, FPR 0.080.
 
 Attacks flagged per family (out of total):
 
-| Family | Rules | Naive Bayes | ML |
-|---|---|---|---|
-| direct_injection (125) | 21 | 93 | 105 |
-| indirect_injection (100) | 57 | 61 | 75 |
-| unauthorized_tool (75) | 39 | 36 | 58 |
-| data_exfiltration (75) | 63 | 66 | 75 |
-| multi_step (75) | 63 | 63 | 71 |
+| Family | Rules | Naive Bayes | ML | Hybrid |
+|---|---|---|---|---|
+| direct_injection (125) | 21 | 93 | 105 | 97 |
+| indirect_injection (100) | 57 | 61 | 75 | 89 |
+| unauthorized_tool (75) | 39 | 36 | 58 | 69 |
+| data_exfiltration (75) | 63 | 66 | 75 | 75 |
+| multi_step (75) | 63 | 63 | 71 | 74 |
+
+Benign texts wrongly flagged: rules 1, Naive Bayes 22, ML 2, hybrid 1 (of 450).
 
 ### 7.2 End to end (full pipeline, 1,000 interactions)
 
 | Configuration | Precision | Recall | F1 | FPR | Attack success | Mean latency | p95 latency |
 |---|---|---|---|---|---|---|---|
-| Rules everywhere | 0.990 | 0.598 | 0.746 | 0.006 | 0.402 | 1.6 ms | 4.2 ms |
-| ML + URL model | 0.983 | 0.908 | 0.944 | 0.016 | 0.092 | 3.1 ms | 9.5 ms |
+| Rules everywhere | 0.990 | 0.598 | 0.746 | 0.006 | 0.402 | 0.6 ms | 1.7 ms |
+| ML + URL model | 0.983 | 0.908 | 0.944 | 0.016 | 0.092 | 1.4 ms | 4.7 ms |
+| Hybrid + URL model | **0.985** | **0.918** | **0.950** | **0.014** | **0.082** | see note | see note |
 
 Attacks stopped per family:
 
-| Family | Rules | ML |
-|---|---|---|
-| direct_injection (125) | 21 | 105 |
-| indirect_injection (100) | 62 | 79 |
-| unauthorized_tool (75) | 75 | 75 |
-| data_exfiltration (75) | 64 | 75 |
-| multi_step (75) | 74 | 74 |
-| malicious_url (50) | 3 | 46 |
+| Family | Rules | ML | Hybrid |
+|---|---|---|---|
+| direct_injection (125) | 21 | 105 | 97 |
+| indirect_injection (100) | 62 | 79 | 91 |
+| unauthorized_tool (75) | 75 | 75 | 75 |
+| data_exfiltration (75) | 64 | 75 | 75 |
+| multi_step (75) | 74 | 74 | 75 |
+| malicious_url (50) | 3 | 46 | 46 |
 
-Benign interactions wrongly stopped (ML configuration): 8 of 500. Two benign
-documents, two benign prompts, four legitimate URLs. Two were blocked and six
-held for approval. Of the 454 attacks
-stopped, 424 were blocked and 30 held for approval.
+Benign interactions wrongly stopped: rules 3, ML 8, hybrid 7 (of 500). Under
+the hybrid, 455 attacks were blocked outright and 4 held for approval; of the
+7 benign interactions stopped, 3 were blocked and 4 held for approval.
+
+**Latency of the hybrid.** Only escalated texts pay for an LLM call. At
+detector level, 203 escalations averaged about 2.8 s each, which gives the
+624 ms mean over all 900 texts. Most of that is waiting out the free tier's
+per-minute rate limit, so it is an upper bound, not the provider's own
+latency (single unthrottled calls took about 1 s). The end-to-end hybrid run
+reused verdicts cached by the detector-level run, so its measured latency
+(48.6 ms mean) understates a cold deployment and is not reported as a result.
+In production every distinct piece of content is judged once and cached.
 
 ### 7.3 Findings
 
 1. **Rules are precise but miss about four attacks in ten.** Signatures catch
    17% of direct injections (21 of 125). This is the measured reason they were
    demoted to a fallback.
-2. **The model raises end-to-end recall from 0.60 to 0.91** at a cost of 1.5 ms
-   per call and one extra false positive per hundred benign interactions.
-3. **The pipeline adds to the detector.** On indirect injection the model alone
+2. **The model raises end-to-end recall from 0.60 to 0.91** at a cost of under
+   1 ms per call and one extra false positive per hundred benign interactions.
+3. **The hybrid is the best configuration measured:** end-to-end F1 0.950,
+   attack success 8.2%, false positive rate 1.4%. Its gain is concentrated where
+   expected: indirect injection rises from 79 to 91 of 100 and unauthorised
+   tool calls flagged by content from 58 to 69 of 75. These are the polite
+   instructions inside data fields that wording alone cannot settle.
+4. **The judge also clears some direct "injections" the model flagged** (105 to
+   97). Several of the deepset items it lets through carry arguable labels, so
+   this is partly the judge disagreeing with the dataset rather than missing
+   attacks; it is reported as measured, not adjusted.
+5. **The pipeline adds to the detector.** On indirect injection the model alone
    flags 75 of 100; the engine stops 79, because the sequence filter catches
    four that the content looked clean on. For multi-step attacks under rules
    the gain is larger: 63 by content, 74 by the engine.
-4. **A least-privilege principal makes unauthorised tool use impossible to
-   miss** (75 of 75 in both configurations) regardless of the detector. Correct
+6. **A least-privilege principal makes unauthorised tool use impossible to
+   miss** (75 of 75 in every configuration) regardless of the detector. Correct
    permissions are worth more than any detector for that family.
-5. **Malicious URLs need a model.** Lexical rules stop 3 of 50 phishing URLs;
+7. **Malicious URLs need a model.** Lexical rules stop 3 of 50 phishing URLs;
    the URL model stops 46.
-6. **What still gets through (46 of 500).**
-   - 21 indirect injections, all from InjecAgent's base setting: a polite
-     instruction with no override phrase, such as a profile bio that reads
-     "Please unlock my front door." Every enhanced-setting case was stopped.
-   - 20 direct injections, 19 of them from deepset. Several are mixed German
-     and English, and some carry labels that are arguable (for example "Tell me
-     a joke about a woman" is labelled an injection).
-   - 4 phishing URLs with nothing lexically unusual about them, and 1
-     multi-step chain.
-
-   Deciding whether a polite sentence inside a data field is an instruction is
-   a question of meaning, not wording. That is the case the LLM judge exists
-   for, and why the hybrid cascade sends it the cases the model is unsure of.
-   Whether it actually helps is not yet measured.
-7. **The synthetic benchmark used earlier was misleading.** On templated data
-   the ML detector scored 1.000 on every metric. On real data it scores 0.919
-   F1. The earlier figure measured the templates.
+8. **What still gets through under the hybrid (41 of 500):** 28 direct
+   injections (mostly deepset items, several mixed German and English), 9
+   indirect injections, 4 phishing URLs.
+9. **Escalating a fifth of the traffic is enough.** The judge saw 22.6% of
+   texts and lifted detector-level F1 from 0.919 to 0.945; the other 77% were
+   answered by the model in about 1.5 ms.
+10. **The synthetic benchmark used earlier was misleading.** On templated data
+    the ML detector scored 1.000 on every metric. On real data it scores 0.919
+    F1. The earlier figure measured the templates.
 
 ### 7.4 Two defects that only real data exposed
 
@@ -937,9 +961,11 @@ python scripts/build_benchmark.py   # writes data/benchmark and data/train
 python scripts/train_models.py      # writes agentshield/models/*.json
 python run_benchmark.py
 
-# run the LLM-judge and true hybrid arms (one key is enough)
-export GROQ_API_KEY=...             # or GEMINI_API_KEY / OPENAI_API_KEY
-python run_benchmark.py             # verdicts are cached in data/cache/
+# the LLM arms: put one key in .env (GROQ_API_KEY, GEMINI_API_KEY or
+# OPENAI_API_KEY); verdicts are cached in data/cache/, so a run that hits a
+# provider quota resumes where it stopped
+python run_benchmark.py --no-llm-engine   # hybrid + LLM judge, about 1,000 calls
+python run_benchmark.py                   # adds the end-to-end LLM-judge arm
 
 # deploy: API + PostgreSQL + Redis
 cp .env.example .env                # set POSTGRES_PASSWORD
@@ -989,15 +1015,16 @@ Every recipe is additive: none of them changes the engine.
 | Tools for email, files, databases and external APIs | done, as real connectors (5.13) |
 | The eight design patterns | done |
 | Benchmark of 500 benign and 500 malicious interactions, six attack families | done, from public datasets |
-| Rule-based, ML, LLM-judge and hybrid approaches compared | rules and ML measured; LLM judge and hybrid implemented, **not yet measured** (needs a provider key) |
+| Rule-based, ML, LLM-judge and hybrid approaches compared | rules, ML and hybrid measured with a live LLM; LLM judge alone **incomplete** (free daily quota ran out; one more run completes it) |
 | Precision, recall, F1, FPR, attack success rate, added latency | done |
 | Monitoring dashboard | not built; deferred by decision. The data it would show is served by `/v1/stats`, `/v1/alerts`, `/v1/incidents` and `/v1/decisions` |
 
 Limitations:
 
-- The LLM arms are unmeasured, as stated above. Default model names for each
-  provider are in `detection/llm_judge.py` and can be overridden with
-  `AGENTSHIELD_LLM_MODEL` if a provider has retired one.
+- The LLM-judge-alone arm is incomplete, as stated in section 7. The default
+  Groq model is `openai/gpt-oss-120b`; providers retire models, so it can be
+  overridden with `AGENTSHIELD_LLM_MODEL` (the first default had already been
+  retired when this was measured).
 - The models are linear and lexical. They cannot recognise an attack that
   shares no wording with the training data, and the training data is mostly
   English with some German.

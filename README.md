@@ -249,14 +249,20 @@ InjecAgent attack instruction appears on both sides of the split.
 
 End to end, full pipeline:
 
-| Configuration | Precision | Recall | F1 | False positive rate | Attack success | Mean latency |
-|---|---|---|---|---|---|---|
-| Rules everywhere | 0.990 | 0.598 | 0.746 | 0.006 | 0.402 | 1.6 ms |
-| ML + URL model | 0.983 | 0.908 | 0.944 | 0.016 | 0.092 | 3.1 ms |
+| Configuration | Precision | Recall | F1 | False positive rate | Attack success |
+|---|---|---|---|---|---|
+| Rules everywhere | 0.990 | 0.598 | 0.746 | 0.006 | 0.402 |
+| ML + URL model | 0.983 | 0.908 | 0.944 | 0.016 | 0.092 |
+| Hybrid (ML + LLM judge) + URL model | 0.985 | 0.918 | 0.950 | 0.014 | 0.082 |
 
-The LLM-judge and true hybrid arms need a provider key and **have not been run
-yet**; set one and run `python run_benchmark.py` to fill them in. Per-family
-results, the detector-level comparison, what still gets through and the
+The ML model adds about 1 ms per call. The hybrid sends roughly a fifth of the
+content to the LLM judge (Groq `openai/gpt-oss-120b` in this run); only those
+calls pay the LLM's latency, and each verdict is cached.
+
+The LLM-judge-alone arm is **incomplete**: the provider's free daily quota ran
+out partway through, and the arm was discarded rather than reported on a
+subset. One more run after the quota resets completes it. Per-family results,
+the detector-level comparison, latency, what still gets through and the
 benchmark's limitations are in [DESIGN.md](DESIGN.md), sections 6 and 7.
 
 To rebuild from the public sources:
