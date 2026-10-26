@@ -32,6 +32,12 @@ class OpenAIToolCallAdapter(ToolCallAdapter):
         return str(name), arguments
 
 
+class GroqToolCallAdapter(OpenAIToolCallAdapter):
+    """Groq speaks the OpenAI tool-call format; only the label differs."""
+
+    framework = "groq"
+
+
 class GeminiToolCallAdapter(ToolCallAdapter):
     """Gemini style: ``{"functionCall": {"name", "args": {...}}}``."""
 
@@ -143,6 +149,16 @@ class OpenAIFactory(AgentIntegrationFactory):
         return DefaultMessageParser()
 
 
+class GroqFactory(AgentIntegrationFactory):
+    framework = "groq"
+
+    def create_adapter(self) -> ToolCallAdapter:
+        return GroqToolCallAdapter()
+
+    def create_message_parser(self) -> MessageParser:
+        return DefaultMessageParser()
+
+
 class GeminiFactory(AgentIntegrationFactory):
     framework = "gemini"
 
@@ -177,9 +193,13 @@ class LocalAgentFactory(AgentIntegrationFactory):
 
 FACTORY_REGISTRY: dict[str, type[AgentIntegrationFactory]] = {
     OpenAIFactory.framework: OpenAIFactory,
+    GroqFactory.framework: GroqFactory,
     GeminiFactory.framework: GeminiFactory,
     MCPFactory.framework: MCPFactory,
     LocalAgentFactory.framework: LocalAgentFactory,
+    # custom JSON callers reach the same generic adapter under either name
+    "json": LocalAgentFactory,
+    "custom": LocalAgentFactory,
 }
 
 

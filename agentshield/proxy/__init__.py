@@ -10,14 +10,18 @@ from agentshield.proxy.commands import (
     build_command,
 )
 from agentshield.proxy.secure_proxy import ApprovalQueue, SecureToolProxy
-from agentshield.proxy.tools import (
-    InMemoryFileTool,
-    InMemoryWriteTool,
-    MockEmailTool,
-    MockSearchTool,
-    Tool,
-    ToolRegistry,
+from agentshield.proxy.connectors import (
+    HttpRequestTool,
+    ListFilesTool,
+    ReadFileTool,
+    SmtpConfig,
+    SmtpEmailTool,
+    SqlQueryTool,
+    Workspace,
+    WriteFileTool,
+    build_connectors,
 )
+from agentshield.proxy.tools import Tool, ToolRegistry
 
 __all__ = [
     "COMMAND_REGISTRY",
@@ -25,10 +29,14 @@ __all__ = [
     "CommandStatus",
     "DatabaseQueryCommand",
     "GenericToolCommand",
-    "InMemoryFileTool",
-    "InMemoryWriteTool",
-    "MockEmailTool",
-    "MockSearchTool",
+    "HttpRequestTool",
+    "ListFilesTool",
+    "ReadFileTool",
+    "SmtpConfig",
+    "SmtpEmailTool",
+    "SqlQueryTool",
+    "Workspace",
+    "WriteFileTool",
     "ReadFileCommand",
     "SecureToolProxy",
     "SendEmailCommand",
@@ -37,4 +45,5 @@ __all__ = [
     "ToolRegistry",
     "WriteFileCommand",
     "build_command",
+    "build_connectors",
 ]

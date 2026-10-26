@@ -99,6 +99,13 @@ class DatabaseQueryCommand(ToolCommand):
         return f"database query: {query[:80]}"
 
 
+class HttpRequestCommand(ToolCommand):
+    def describe(self) -> str:
+        method = str(self.call.arguments.get("method", "GET")).upper()
+        url = self.call.arguments.get("url", self.call.destination or "?")
+        return f"{method} {url}"
+
+
 class GenericToolCommand(ToolCommand):
     def describe(self) -> str:
         return f"invoke {self.call.tool} with {sorted(self.call.arguments)}"
@@ -111,6 +118,9 @@ COMMAND_REGISTRY: dict[str, type[ToolCommand]] = {
     "send_email": SendEmailCommand,
     "query_database": DatabaseQueryCommand,
     "sql_query": DatabaseQueryCommand,
+    "http_request": HttpRequestCommand,
+    "fetch_url": HttpRequestCommand,
+    "list_files": ReadFileCommand,
 }
 
 

@@ -63,6 +63,14 @@ class Repository(ABC):
         ...
 
     @abstractmethod
+    def list_approvals(self, status: str | None = "PENDING", limit: int = 50) -> list[dict]:
+        """Approval requests, newest first; ``status=None`` returns every status."""
+
+    @abstractmethod
+    def get_approval(self, call_id: str) -> dict | None:
+        ...
+
+    @abstractmethod
     def counts(self) -> dict[str, int]:
         """Row counts per table, for the /stats endpoint."""
 

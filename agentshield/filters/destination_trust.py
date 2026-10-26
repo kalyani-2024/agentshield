@@ -8,11 +8,12 @@ from enum import Enum
 from urllib.parse import urlparse
 
 from agentshield.core.models import FilterResult, ToolCall, ToolCategory, Verdict
+from agentshield.detection.ml import ProbabilisticModel
 from agentshield.engine.session import Session
 from agentshield.filters.base import SecurityFilter, severity_for
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@([\w-]+\.[\w.-]+)")
-_URL_RE = re.compile(r"https?://([^\s/:?#]+)", re.IGNORECASE)
+_URL_RE = re.compile(r"https?://([^\s/:?#\"'<>]+)[^\s\"'<>]*", re.IGNORECASE)
 _IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
 #: Hosts and TLDs commonly used to receive exfiltrated data.
@@ -39,14 +40,22 @@ class TrustPolicy:
     #: when True, any destination outside ``allowed_domains`` is LOW trust
     allowlist_only: bool = False
 
-    def classify(self, host: str) -> Trust:
+    def listed(self, host: str) -> Trust | None:
+        """The operator's explicit verdict for a host, if there is one."""
         host = host.lower().strip(".")
-        if not host:
-            return Trust.NEUTRAL
         if self._matches(host, self.denied_domains):
             return Trust.DENIED
         if self._matches(host, self.allowed_domains):
             return Trust.ALLOWED
+        return None
+
+    def classify(self, host: str) -> Trust:
+        host = host.lower().strip(".")
+        if not host:
+            return Trust.NEUTRAL
+        listed = self.listed(host)
+        if listed is not None:
+            return listed
         if any(hint in host for hint in SUSPICIOUS_HOST_HINTS):
             return Trust.LOW
         if host.endswith(SUSPICIOUS_TLDS):
@@ -61,7 +70,13 @@ class TrustPolicy:
 
 
 class DestinationTrustFilter(SecurityFilter):
-    """Scores the trust of every external destination the call touches."""
+    """Scores the trust of every external destination the call touches.
+
+    The operator's allow and deny lists are policy and always win.  For a URL
+    that is on neither list the URL model decides; the lexical hints above
+    (drop hosts, odd TLDs, raw IPs) are used only when no model is loaded, and
+    for bare e-mail domains, which the URL model was not trained on.
+    """
 
     name = "destination_trust"
 
@@ -72,9 +87,17 @@ class DestinationTrustFilter(SecurityFilter):
         Trust.ALLOWED: 0,
     }
 
-    def __init__(self, policy: TrustPolicy | None = None) -> None:
+    #: model probability at which a URL is treated as malicious
+    URL_THRESHOLD = 0.5
+
+    def __init__(
+        self,
+        policy: TrustPolicy | None = None,
+        url_model: ProbabilisticModel | None = None,
+    ) -> None:
         super().__init__()
         self.policy = policy or TrustPolicy()
+        self.url_model = url_model
 
     def check(self, call: ToolCall, session: Session) -> FilterResult:
         if call.category not in (ToolCategory.COMMUNICATE, ToolCategory.READ_REMOTE):
@@ -82,6 +105,10 @@ class DestinationTrustFilter(SecurityFilter):
 
         signals = []
         for host, raw in self._destinations(call):
+            is_url = raw.lower().startswith(("http://", "https://"))
+            if self.url_model is not None and is_url and self.policy.listed(host) is None:
+                signals.append(self._model_signal(call, host, raw))
+                continue
             trust = self.policy.classify(host)
             score = self._SCORES[trust]
             if trust is Trust.ALLOWED:
@@ -91,7 +118,10 @@ class DestinationTrustFilter(SecurityFilter):
                 score = min(100, score + 10)
             signals.append(
                 self.signal(
-                    category="untrusted_destination",
+                    # an unlisted host is not a known-bad one; keeping the two
+                    # apart stops "unknown" from earning the bonuses meant for "bad"
+                    category="unlisted_destination" if trust is Trust.NEUTRAL
+                    else "untrusted_destination",
                     score=score,
                     severity=severity_for(score),
                     message=(
@@ -104,6 +134,36 @@ class DestinationTrustFilter(SecurityFilter):
             )
 
         return FilterResult.from_signals(signals)
+
+    def _model_signal(self, call: ToolCall, host: str, url: str):
+        probability = self.url_model.predict_proba(url)
+        if probability < self.URL_THRESHOLD:
+            score = self._SCORES[Trust.NEUTRAL]
+            return self.signal(
+                category="unlisted_destination",
+                score=score,
+                severity=severity_for(score),
+                message=(
+                    f"destination {url!r} is not on the allowlist "
+                    f"(URL model {probability:.2f})"
+                ),
+                evidence=host,
+                verdict=Verdict.FLAG,
+            )
+        score = int(round(probability * 100))
+        if not call.user_authorized:
+            score = min(100, score + 10)
+        return self.signal(
+            category="malicious_url",
+            score=score,
+            severity=severity_for(score),
+            message=(
+                f"URL {url!r} looks malicious to the URL model "
+                f"(probability {probability:.2f})"
+            ),
+            evidence=host,
+            verdict=Verdict.FLAG,
+        )
 
     def _destinations(self, call: ToolCall) -> list[tuple[str, str]]:
         """(host, original) pairs found in the destination field and arguments."""

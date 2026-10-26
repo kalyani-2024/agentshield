@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from agentshield.core.models import FilterResult, ToolCall, TrustLevel, Verdict
-from agentshield.detection.strategies import EnsembleStrategy
-from agentshield.detection.strategy import DetectionStrategy
+from agentshield.detection.factory import default_detector
+from agentshield.detection.strategy import Channel, DetectionResult, DetectionStrategy
 from agentshield.engine.session import Session
 from agentshield.filters.base import SecurityFilter, severity_for
 
@@ -15,6 +15,10 @@ class PromptInjectionFilter(SecurityFilter):
     Injection found in *untrusted context* (a document, a web page, an email the
     agent just read) is the indirect case and is treated as more serious than
     the same text appearing in the arguments, because the user never saw it.
+
+    The detector is a :class:`DetectionStrategy`.  By default that is the ML
+    model with the signature rules behind it as a fallback; a deployment swaps
+    in the hybrid ML + LLM-judge cascade through the service settings.
     """
 
     name = "prompt_injection"
@@ -22,17 +26,23 @@ class PromptInjectionFilter(SecurityFilter):
     def __init__(
         self,
         strategy: DetectionStrategy | None = None,
-        flag_confidence: float = 0.35,
+        flag_confidence: float | None = None,
     ) -> None:
         super().__init__()
-        self.strategy = strategy or EnsembleStrategy()
+        self.strategy = strategy or default_detector()
+        #: overrides the strategy's own threshold when set
         self.flag_confidence = flag_confidence
+
+    def _flagged(self, result: DetectionResult) -> bool:
+        if self.flag_confidence is not None:
+            return result.confidence >= self.flag_confidence
+        return result.flagged
 
     def check(self, call: ToolCall, session: Session) -> FilterResult:
         signals = []
 
-        direct = self.strategy.detect(call.argument_text())
-        if direct.confidence >= self.flag_confidence:
+        direct = self.strategy.detect(call.argument_text(), Channel.ARGUMENTS)
+        if self._flagged(direct):
             signals.append(
                 self.signal(
                     category="prompt_injection",
@@ -47,8 +57,11 @@ class PromptInjectionFilter(SecurityFilter):
         for chunk in call.context:
             if chunk.trust is TrustLevel.TRUSTED:
                 continue
-            result = self.strategy.detect(chunk.content)
-            if result.confidence < self.flag_confidence:
+            channel = (
+                Channel.UNTRUSTED if chunk.trust is TrustLevel.UNTRUSTED else Channel.USER
+            )
+            result = self.strategy.detect(chunk.content, channel)
+            if not self._flagged(result):
                 continue
             # Indirect injection: content the agent ingested is giving orders.
             weight = 1.15 if chunk.trust is TrustLevel.UNTRUSTED else 1.0

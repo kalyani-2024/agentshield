@@ -14,3 +14,8 @@ audit*.jsonl
 *.sqlite3
 .idea/
 .vscode/
+# downloaded source datasets and LLM verdict cache (rebuild with scripts/)
+data/raw/
+data/cache/
+# default file-tool workspace
+workspace/

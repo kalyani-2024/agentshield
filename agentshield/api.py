@@ -1,7 +1,7 @@
 """The facade an integrator actually uses.
 
     shield = AgentShield()
-    shield.register(MockEmailTool())
+    shield.register(SmtpEmailTool(SmtpConfig(host="smtp.example.com", sender="agent@example.com")))
     assessment = shield.inspect(raw_call, framework="openai", messages=history)
 """
 

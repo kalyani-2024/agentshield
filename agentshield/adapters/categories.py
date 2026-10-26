@@ -11,10 +11,17 @@ import re
 
 from agentshield.core.models import ToolCategory
 
+#: Verbs that send something out.  These always mean COMMUNICATE.
+_SEND_VERBS = r"send|post|publish|notify|reply|forward|dm|sms|tweet|share"
+#: Channel names.  On their own they suggest COMMUNICATE, but 'GmailReadEmail'
+#: reads a mailbox and must not be judged as an outbound send.
+_CHANNEL_NOUNS = r"webhook|slack|gmail|mail"
+_READ_VERBS = r"read|get|list|search|view|fetch|find|download|check|retrieve"
+
 #: (alternation source, category), most specific class first.
 _RULES: tuple[tuple[str, ToolCategory], ...] = (
-    (r"send|post|publish|notify|reply|forward|dm|sms|webhook|slack|gmail|mail|tweet",
-     ToolCategory.COMMUNICATE),
+    (_SEND_VERBS, ToolCategory.COMMUNICATE),
+    (_CHANNEL_NOUNS, ToolCategory.COMMUNICATE),
     (r"shell|bash|exec|eval|python|subprocess|terminal|command",
      ToolCategory.EXECUTE),
     (r"write|create|update|delete|remove|move|rename|save|upload|chmod",
@@ -23,7 +30,7 @@ _RULES: tuple[tuple[str, ToolCategory], ...] = (
      ToolCategory.QUERY_DATA),
     (r"browse|fetch|http|url|web|search|crawl|scrape|request",
      ToolCategory.READ_REMOTE),
-    (r"read|open|list|cat|load|get|find|grep|file|dir|folder|contact",
+    (r"read|open|list|cat|load|get|find|grep|view|file|dir|folder|contact",
      ToolCategory.READ_LOCAL),
 )
 
@@ -33,6 +40,10 @@ _COMPILED: tuple[tuple[re.Pattern[str], ToolCategory], ...] = tuple(
     (re.compile(rf"\b(?:{alternatives})\w*\b"), category)
     for alternatives, category in _RULES
 )
+
+_READ_RE = re.compile(rf"\b(?:{_READ_VERBS})\w*\b")
+#: index of the channel-noun rule in ``_RULES``
+_CHANNEL_RULE = 1
 
 _SPLIT_RE = re.compile(r"[^a-z0-9]+")
 _CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
@@ -51,9 +62,18 @@ def classify_tool(tool_name: str) -> ToolCategory:
     would silently hand a tool the wrong privileges.
     """
     name = _tokenize(tool_name)
-    for pattern, category in _COMPILED:
-        if pattern.search(name):
-            return category
+    reads = bool(_READ_RE.search(name))
+    for index, (pattern, category) in enumerate(_COMPILED):
+        if index == _CHANNEL_RULE and reads:
+            continue
+        match = pattern.search(name)
+        if match is None:
+            continue
+        # 'ViewSavedAddresses', 'ListDeletedFiles': after a read verb a past
+        # participle describes the data, it is not the action
+        if reads and category is ToolCategory.WRITE_LOCAL and match.group(0).endswith("ed"):
+            continue
+        return category
     return ToolCategory.UNKNOWN
 
 

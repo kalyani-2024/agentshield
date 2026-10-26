@@ -1,38 +1,34 @@
 from agentshield.benchmark.classifier import NaiveBayesClassifier, tokenize
 from agentshield.benchmark.dataset import (
+    BENCHMARK_PATH,
     BENIGN,
     MALICIOUS,
     Sample,
-    generate_dataset,
-    train_test_split,
+    Step,
+    load_benchmark,
+    load_training_text,
 )
 from agentshield.benchmark.harness import (
-    StrategyReport,
-    compare_detectors,
+    Report,
     evaluate_detector,
     evaluate_engine,
+    evaluate_url_model,
 )
 from agentshield.benchmark.metrics import ConfusionMatrix
-from agentshield.benchmark.strategies_ext import (
-    HybridStrategy,
-    LLMJudgeStrategy,
-    MLStrategy,
-)
 
 __all__ = [
+    "BENCHMARK_PATH",
     "BENIGN",
     "MALICIOUS",
     "ConfusionMatrix",
-    "HybridStrategy",
-    "LLMJudgeStrategy",
-    "MLStrategy",
     "NaiveBayesClassifier",
+    "Report",
     "Sample",
-    "StrategyReport",
-    "compare_detectors",
+    "Step",
     "evaluate_detector",
     "evaluate_engine",
-    "generate_dataset",
+    "evaluate_url_model",
+    "load_benchmark",
+    "load_training_text",
     "tokenize",
-    "train_test_split",
 ]

@@ -1,0 +1,51 @@
+{
+  "name": "agentshield_bench_v1",
+  "seed": 20261012,
+  "total": 1000,
+  "labels": {
+    "benign": 500,
+    "malicious": 500
+  },
+  "families": {
+    "benign_document": 50,
+    "benign_prompt": 150,
+    "benign_tool_call": 125,
+    "benign_tool_session": 125,
+    "benign_url": 50,
+    "data_exfiltration": 75,
+    "direct_injection": 125,
+    "indirect_injection": 100,
+    "malicious_url": 50,
+    "multi_step": 75,
+    "unauthorized_tool": 75
+  },
+  "sources": {
+    "InjecAgent:dh_base": 85,
+    "InjecAgent:dh_enhanced": 90,
+    "InjecAgent:ds_base": 63,
+    "InjecAgent:ds_enhanced": 87,
+    "InjecAgent:user_cases+deepset:test": 50,
+    "Lakera/gandalf_ignore_instructions:test": 40,
+    "deepset/prompt-injections:test": 106,
+    "glaive-function-calling-v2": 250,
+    "jackhhao/jailbreak-classification:test": 129,
+    "pirocheto/phishing-url:test": 100
+  },
+  "train_text": {
+    "benign|deepset:train": 343,
+    "benign|glaive:arguments": 338,
+    "benign|glaive:tool_output": 333,
+    "benign|glaive:user": 712,
+    "benign|injecagent:benign_document": 340,
+    "benign|jailbreak:train": 515,
+    "malicious|deepset:train": 203,
+    "malicious|gandalf:train": 887,
+    "malicious|injecagent:base": 247,
+    "malicious|injecagent:enhanced": 253,
+    "malicious|jailbreak:train": 514
+  },
+  "train_urls": {
+    "benign": 1493,
+    "malicious": 1507
+  }
+}

@@ -6,6 +6,7 @@ The two backends differ only in how they connect and in the parameter marker
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Sequence
 
 from agentshield.core.models import Principal, SecurityAssessment
@@ -23,6 +24,8 @@ class SqlRepository(Repository):
 
     def __init__(self) -> None:
         self._conn: Any = None
+        #: serialises statements; the API serves requests from several threads
+        self._lock = threading.RLock()
 
     # -- subclasses provide these ---------------------------------------
     def _connect(self) -> Any:  # pragma: no cover - trivial
@@ -60,12 +63,19 @@ class SqlRepository(Repository):
         return dumps(value)
 
     def _execute(self, sql: str, params: Sequence[Any] = ()) -> Any:
-        cur = self._conn.cursor()
-        cur.execute(self._q(sql), tuple(params))
-        return cur
+        with self._lock:
+            cur = self._conn.cursor()
+            try:
+                cur.execute(self._q(sql), tuple(params))
+            except Exception:
+                # leave the connection usable for the next request
+                self._conn.rollback()
+                raise
+            return cur
 
     def _commit(self) -> None:
-        self._conn.commit()
+        with self._lock:
+            self._conn.commit()
 
     def _rows(self, cur: Any) -> list[dict]:
         columns = [c[0] for c in cur.description]
@@ -202,6 +212,22 @@ class SqlRepository(Repository):
         for row in rows:
             row["detail"] = loads(row.get("detail"))
         return rows
+
+    def list_approvals(self, status: str | None = "PENDING", limit: int = 50) -> list[dict]:
+        if status:
+            cur = self._execute(
+                "SELECT * FROM approvals WHERE status = ? ORDER BY id DESC LIMIT ?",
+                [status, limit],
+            )
+        else:
+            cur = self._execute("SELECT * FROM approvals ORDER BY id DESC LIMIT ?", [limit])
+        return self._rows(cur)
+
+    def get_approval(self, call_id: str) -> dict | None:
+        rows = self._rows(
+            self._execute("SELECT * FROM approvals WHERE call_id = ?", [call_id])
+        )
+        return rows[0] if rows else None
 
     def counts(self) -> dict[str, int]:
         tables = (

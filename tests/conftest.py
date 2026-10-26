@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from agentshield import AgentShield, Principal, TrustPolicy
-from agentshield.proxy.tools import InMemoryFileTool, MockEmailTool, MockSearchTool
+from tests.doubles import InMemoryFileTool, MockEmailTool, MockSearchTool
 
 
 @pytest.fixture

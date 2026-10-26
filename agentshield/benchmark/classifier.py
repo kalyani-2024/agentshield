@@ -1,8 +1,8 @@
-"""A dependency-free ML detector: multinomial Naive Bayes over token n-grams.
+"""The ML baseline: multinomial Naive Bayes over token n-grams, from scratch.
 
-This is the "ML detector" arm of the Stage 3 comparison.  It is trained from
-scratch on the benchmark's training split, so the experiment is fully
-self-contained - no scikit-learn, no model download, no network.
+The deployed model is the logistic regression in :mod:`agentshield.detection.ml`.
+This classifier is trained on the same training pools and reported next to it
+in the benchmark, so the choice of model is a measured one rather than assumed.
 """
 
 from __future__ import annotations

@@ -15,7 +15,7 @@ from agentshield.core.models import (
 from agentshield.filters.destination_trust import TrustPolicy
 from agentshield.report import print_report, render
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "AgentShield",

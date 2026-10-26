@@ -1,4 +1,9 @@
-"""Concrete detection strategies available in stage 1."""
+"""The rule-based detection strategies: signatures and lexical heuristics.
+
+These are hand-written and channel-blind.  In a deployment they are the
+fallback behind the models (see :mod:`agentshield.detection.cascade`); in the
+benchmark they are the baseline the models are measured against.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,7 @@ from agentshield.detection.patterns import (
     Signature,
 )
 from agentshield.detection.strategy import (
+    Channel,
     DetectionHit,
     DetectionResult,
     DetectionStrategy,
@@ -47,7 +53,7 @@ class RegexStrategy(DetectionStrategy):
     def __init__(self, signatures: tuple[Signature, ...] = INJECTION_SIGNATURES) -> None:
         self._signatures = signatures
 
-    def detect(self, text: str) -> DetectionResult:
+    def detect(self, text: str, channel: Channel = Channel.UNTRUSTED) -> DetectionResult:
         if not text.strip():
             return DetectionResult(strategy=self.name)
 
@@ -85,7 +91,7 @@ class HeuristicStrategy(DetectionStrategy):
     def __init__(self, terms: dict[str, int] = SUSPICIOUS_TERMS) -> None:
         self._terms = terms
 
-    def detect(self, text: str) -> DetectionResult:
+    def detect(self, text: str, channel: Channel = Channel.UNTRUSTED) -> DetectionResult:
         stripped = text.strip()
         if not stripped:
             return DetectionResult(strategy=self.name)
@@ -183,8 +189,8 @@ class EnsembleStrategy(DetectionStrategy):
             raise ValueError("weights must match the number of strategies")
         self._weights = weights
 
-    def detect(self, text: str) -> DetectionResult:
-        results = [s.detect(text) for s in self._strategies]
+    def detect(self, text: str, channel: Channel = Channel.UNTRUSTED) -> DetectionResult:
+        results = [s.detect(text, channel) for s in self._strategies]
         total_weight = sum(self._weights) or 1.0
         weighted = sum(r.confidence * w for r, w in zip(results, self._weights))
         mean = weighted / total_weight

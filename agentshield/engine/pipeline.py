@@ -11,6 +11,9 @@ from agentshield.core.models import (
     ToolCall,
     Verdict,
 )
+from agentshield.detection.factory import url_model as packaged_url_model
+from agentshield.detection.ml import ProbabilisticModel
+from agentshield.detection.strategy import DetectionStrategy
 from agentshield.engine.events import (
     AuditObserver,
     EventBus,
@@ -30,17 +33,31 @@ from agentshield.filters.sensitive_data import SensitiveDataFilter
 from agentshield.filters.sequence_behavior import SequenceBehaviourFilter
 
 
-def default_filters(trust_policy: TrustPolicy | None = None) -> list[SecurityFilter]:
-    """The stage 1 pipeline, in evaluation order.
+#: "use the packaged URL model if it is there"
+AUTO = object()
+
+
+def default_filters(
+    trust_policy: TrustPolicy | None = None,
+    detector: DetectionStrategy | None = None,
+    url_model: ProbabilisticModel | None | object = AUTO,
+) -> list[SecurityFilter]:
+    """The security pipeline, in evaluation order.
 
     Permission runs first because it is the cheapest hard stop; the behavioural
     filter runs last because it needs the rest of the picture to be useful.
+
+    ``detector`` is the injection detection strategy (model-first by default)
+    and ``url_model`` the URL classifier; pass ``url_model=None`` to run the
+    destination filter on its lexical rules alone.
     """
+    if url_model is AUTO:
+        url_model = packaged_url_model()
     return [
         PermissionFilter(),
-        PromptInjectionFilter(),
+        PromptInjectionFilter(detector),
         SensitiveDataFilter(),
-        DestinationTrustFilter(trust_policy),
+        DestinationTrustFilter(trust_policy, url_model),
         SequenceBehaviourFilter(),
     ]
 
@@ -61,8 +78,13 @@ class SecurityEngine:
         policy: PolicyEngine | None = None,
         bus: EventBus | None = None,
         trust_policy: TrustPolicy | None = None,
+        detector: DetectionStrategy | None = None,
+        url_model: ProbabilisticModel | None | object = AUTO,
     ) -> None:
-        self.filters = filters if filters is not None else default_filters(trust_policy)
+        self.filters = (
+            filters if filters is not None
+            else default_filters(trust_policy, detector, url_model)
+        )
         self.chain = build_chain(self.filters)
         self.sessions = sessions or SessionStore()
         self.aggregator = aggregator or RiskAggregator()

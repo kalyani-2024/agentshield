@@ -46,7 +46,7 @@ def render(assessment: SecurityAssessment) -> str:
         _centre(""),
         _row(
             "Destination trust",
-            "LOW" if "untrusted_destination" in categories else "OK",
+            "LOW" if categories & {"untrusted_destination", "malicious_url"} else "OK",
         ),
         _row(
             "Sensitive information",

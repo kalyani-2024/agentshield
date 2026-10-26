@@ -25,6 +25,8 @@ CORRELATION_BONUS: dict[frozenset[str], int] = {
     frozenset({"suspicious_sequence", "sensitive_data_egress"}): 15,
     frozenset({"suspicious_sequence", "untrusted_destination"}): 12,
     frozenset({"sensitive_resource_access", "untrusted_destination"}): 15,
+    frozenset({"indirect_prompt_injection", "malicious_url"}): 18,
+    frozenset({"sensitive_data_egress", "malicious_url"}): 18,
     frozenset({"excessive_agency", "indirect_prompt_injection"}): 15,
 }
 
@@ -38,6 +40,8 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "sensitive_data": 0.7,
     "sensitive_resource_access": 0.8,
     "untrusted_destination": 0.9,
+    "unlisted_destination": 0.9,
+    "malicious_url": 0.9,
     "suspicious_sequence": 0.9,
     "repeat_offender": 0.8,
     "tool_call_burst": 0.5,

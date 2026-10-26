@@ -1,0 +1,74 @@
+# The full deployment: API + PostgreSQL + Redis.
+#
+#   cp .env.example .env        # then set POSTGRES_PASSWORD (and an LLM key, optionally)
+#   docker compose up --build -d
+#   curl http://localhost:8000/health
+#
+# The API runs as a single process on purpose: commands waiting for human
+# approval are held in that process's memory.
+
+services:
+  api:
+    build: .
+    image: agentshield:latest
+    ports:
+      - "${AGENTSHIELD_PORT:-8000}:8000"
+    environment:
+      AGENTSHIELD_DATABASE_URL: postgresql://agentshield:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/agentshield
+      AGENTSHIELD_REDIS_URL: redis://redis:6379/0
+      AGENTSHIELD_API_KEY: ${AGENTSHIELD_API_KEY:-}
+      AGENTSHIELD_ALLOWED_DOMAINS: ${AGENTSHIELD_ALLOWED_DOMAINS:-}
+      AGENTSHIELD_DENIED_DOMAINS: ${AGENTSHIELD_DENIED_DOMAINS:-}
+      AGENTSHIELD_DETECTOR: ${AGENTSHIELD_DETECTOR:-hybrid}
+      AGENTSHIELD_LLM_PROVIDER: ${AGENTSHIELD_LLM_PROVIDER:-}
+      AGENTSHIELD_LLM_MODEL: ${AGENTSHIELD_LLM_MODEL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # tool connectors (see .env.example); unset ones stay off
+      AGENTSHIELD_TOOLS: ${AGENTSHIELD_TOOLS:-files,email,database,http}
+      AGENTSHIELD_TOOL_DATABASE_URL: ${AGENTSHIELD_TOOL_DATABASE_URL:-}
+      AGENTSHIELD_SMTP_HOST: ${AGENTSHIELD_SMTP_HOST:-}
+      AGENTSHIELD_SMTP_PORT: ${AGENTSHIELD_SMTP_PORT:-587}
+      AGENTSHIELD_SMTP_USERNAME: ${AGENTSHIELD_SMTP_USERNAME:-}
+      AGENTSHIELD_SMTP_PASSWORD: ${AGENTSHIELD_SMTP_PASSWORD:-}
+      AGENTSHIELD_SMTP_FROM: ${AGENTSHIELD_SMTP_FROM:-}
+      AGENTSHIELD_SMTP_STARTTLS: ${AGENTSHIELD_SMTP_STARTTLS:-true}
+      AGENTSHIELD_SMTP_SSL: ${AGENTSHIELD_SMTP_SSL:-false}
+    volumes:
+      - workspace:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agentshield
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: agentshield
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentshield -d agentshield"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  workspace:
